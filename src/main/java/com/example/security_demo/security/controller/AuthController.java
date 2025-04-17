@@ -4,6 +4,7 @@ import com.example.security_demo.security.dto.RegisterRequest;
 import com.example.security_demo.security.dto.LoginRequest;
 import com.example.security_demo.security.model.AppUser;
 import com.example.security_demo.security.repo.AppUserRepository;
+import com.example.security_demo.security.util.JwtUtil;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpSession;
 import org.slf4j.Logger;
@@ -15,9 +16,11 @@ import org.springframework.security.authentication.UsernamePasswordAuthenticatio
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.AuthenticationException;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.Map;
 import java.util.Set;
 
 @RestController
@@ -28,11 +31,14 @@ public class AuthController {
     private final AuthenticationManager authenticationManager;
     private final AppUserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
+    private final JwtUtil jwtUtil;
 
-    public AuthController(AuthenticationManager authenticationManager, AppUserRepository userRepository, PasswordEncoder passwordEncoder) {
+    public AuthController(AuthenticationManager authenticationManager, AppUserRepository userRepository,
+                          PasswordEncoder passwordEncoder, JwtUtil jwtUtil) {
         this.authenticationManager = authenticationManager;
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
+        this.jwtUtil = jwtUtil;
     }
 
     @PostMapping("/register")
@@ -48,27 +54,23 @@ public class AuthController {
     }
 
     @PostMapping("/login")
-    public ResponseEntity<String> login(@RequestBody LoginRequest request) {
+    public ResponseEntity<?> login(@RequestBody LoginRequest request) {
         if (userRepository.findByUserName(request.userName()).isEmpty()) {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body("User does not exists");
         }
         var unAuthenticatedUser = new UsernamePasswordAuthenticationToken(
                 request.userName(), request.password()
         );
-        logger.debug("Unauthenticated User {}", unAuthenticatedUser);
+        // Authenticate the user
         Authentication authenticatedUser =
                 authenticationManager.authenticate(unAuthenticatedUser);
-        logger.debug("Authenticated User {}", authenticatedUser);
-
-        SecurityContextHolder.getContext().setAuthentication(authenticatedUser);
-        logger.debug("Security Context User: {}",
-                SecurityContextHolder.getContext().getAuthentication().getName());
-        return ResponseEntity.ok("Login Successful.");
+        String token = jwtUtil.generateToken((UserDetails) authenticatedUser.getPrincipal());
+        return ResponseEntity.ok(Map.of("status", HttpStatus.OK, "token", token));
 
     }
 
     @ExceptionHandler(AuthenticationException.class)
-    public ResponseEntity<String> handleAuthException(AuthenticationException ae){
+    public ResponseEntity<String> handleAuthException(AuthenticationException ae) {
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(ae.getMessage());
     }
 }
